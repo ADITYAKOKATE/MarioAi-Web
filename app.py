@@ -1,29 +1,16 @@
 import time
-import io
 import os
-import cv2
-
-# Gevent monkey patching MUST happen before other imports for async workers
-import gevent.monkey
-gevent.monkey.patch_all()
-
 import threading
-
-import os
+import numpy as np
 import cv2
 
-# Make pygame headless BEFORE anything else imports it
+# --- Make pygame headless BEFORE anything else imports it ---
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 from queue import Queue, Empty
-from flask import Flask, render_template, Response, jsonify
+from flask import Flask, render_template, jsonify, make_response
 
-import gymnasium as gym
-import numpy as np
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
-from mario_env import MarioEnv
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 
@@ -43,7 +30,7 @@ game_thread = None
 
 def make_env():
     def _init():
-        # Force rgb_array to capture frames without needing a window
+        from mario_env import MarioEnv
         env = MarioEnv(render_mode="rgb_array")
         return env
     return _init
@@ -51,10 +38,13 @@ def make_env():
 def game_loop():
     global game_running
     
+    # Import heavy libraries lazily to reduce startup memory on Render
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+    import pygame
+
     env = None
     try:
-        # Initialize Environment
-        # Important: Create environment here inside the thread
         env = DummyVecEnv([make_env()])
         env = VecFrameStack(env, n_stack=4)
         
