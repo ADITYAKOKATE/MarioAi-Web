@@ -1,6 +1,14 @@
 import time
-import threading
 import io
+import os
+import cv2
+
+# Gevent monkey patching MUST happen before other imports for async workers
+import gevent.monkey
+gevent.monkey.patch_all()
+
+import threading
+
 import os
 import cv2
 
