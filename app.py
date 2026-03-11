@@ -217,31 +217,26 @@ def get_logs():
             break
     return jsonify(logs)
 
-def generate_video_stream():
-    # If game isn't running, return a placeholder black screen
+@app.route('/snapshot')
+def snapshot():
+    """Returns a single JPEG frame. The frontend polls this via JS to build a 'live feed'."""
     blank_frame = np.zeros((240, 256, 3), dtype=np.uint8)
-    _, buffer = cv2.imencode('.jpg', blank_frame)
-    blank_bytes = buffer.tobytes()
-    
-    while True:
-        if game_running:
-            try:
-                # Get latest frame
-                frame_bytes = frame_queue.get(timeout=1.0)
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            except Empty:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + blank_bytes + b'\r\n')
-        else:
-             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + blank_bytes + b'\r\n')
-             time.sleep(0.5)
+    _, blank_buf = cv2.imencode('.jpg', blank_frame)
+    blank_bytes = blank_buf.tobytes()
 
-@app.route('/video_feed')
-def video_feed():
-    return Response(generate_video_stream(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
+    frame_bytes = blank_bytes
+    if game_running:
+        try:
+            frame_bytes = frame_queue.get_nowait()
+        except Empty:
+            pass
+
+    from flask import make_response
+    response = make_response(frame_bytes)
+    response.headers['Content-Type'] = 'image/jpeg'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
