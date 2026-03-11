@@ -3,6 +3,10 @@ import threading
 import io
 import os
 import cv2
+
+# Make pygame headless BEFORE anything else imports it
+os.environ["SDL_VIDEODRIVER"] = "dummy"
+
 from queue import Queue, Empty
 from flask import Flask, render_template, Response, jsonify
 
@@ -11,10 +15,6 @@ import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from mario_env import MarioEnv
-
-# Make pygame headless so it doesn't open a desktop window
-os.environ["SDL_VIDEODRIVER"] = "dummy"
-
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 
@@ -42,37 +42,38 @@ def make_env():
 def game_loop():
     global game_running
     
-    # Initialize Environment
-    # Important: Create environment here inside the thread
-    env = DummyVecEnv([make_env()])
-    env = VecFrameStack(env, n_stack=4)
-    
-    # Find model
-    model = None
-    paths_to_try = ["mario_ppo_final", "mario_ppo_interrupted", "train/mario_model_200000_steps"]
-    for path in paths_to_try:
-        try:
-            model = PPO.load(path)
-            log_queue.put({"type": "info", "msg": f"Model loaded: {path}"})
-            break
-        except FileNotFoundError:
-            pass
-            
-    if model is None:
-        log_queue.put({"type": "error", "msg": "Could not find trained model."})
-        game_running = False
-        return
-
-    obs = env.reset()
-    done = False
-    total_reward = 0
-    step = 0
-    stuck_counter = 0
-    last_x_pos = 0
-
-    log_queue.put({"type": "success", "msg": "Game loop started."})
-
+    env = None
     try:
+        # Initialize Environment
+        # Important: Create environment here inside the thread
+        env = DummyVecEnv([make_env()])
+        env = VecFrameStack(env, n_stack=4)
+        
+        # Find model
+        model = None
+        paths_to_try = ["mario_ppo_final", "mario_ppo_interrupted", "train/mario_model_200000_steps"]
+        for path in paths_to_try:
+            try:
+                model = PPO.load(path)
+                log_queue.put({"type": "info", "msg": f"Model loaded: {path}"})
+                break
+            except Exception as e:
+                pass
+                
+        if model is None:
+            log_queue.put({"type": "error", "msg": "Could not find trained model."})
+            game_running = False
+            return
+
+        obs = env.reset()
+        done = False
+        total_reward = 0
+        step = 0
+        stuck_counter = 0
+        last_x_pos = 0
+
+        log_queue.put({"type": "success", "msg": "Game loop started."})
+
         while game_running:
             action, _states = model.predict(obs, deterministic=True)
             
@@ -156,11 +157,11 @@ def game_loop():
         import traceback
         tb_str = traceback.format_exc()
         print(f"TRACEBACK:\n{tb_str}")
-        log_queue.put({"type": "error", "msg": f"Error in loop: {str(e)}: {tb_str}"})
-
+        log_queue.put({"type": "error", "msg": f"Error in loop: {str(e)}"})
         
     finally:
-        env.close()
+        if env:
+            env.close()
         game_running = False
         log_queue.put({"type": "info", "msg": "Game stopped."})
 
