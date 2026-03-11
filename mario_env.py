@@ -21,9 +21,7 @@ class MarioEnv(gym.Env):
         # Observation space: 84x84 grayscale image
         self.observation_space = spaces.Box(low=0, high=255, shape=(84, 84, 1), dtype=np.uint8)
         
-        # Pygame setup
-        pygame.init()
-        pygame.display.init()
+        # Pygame setup (Removed init and display.init calls to avoid headless hangs)
         self.window = None
         self.clock = None
         self.surf = pygame.Surface((self.level_width, self.window_height)) # Draw on full level surface

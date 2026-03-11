@@ -6,6 +6,7 @@ import cv2
 
 # Make pygame headless BEFORE anything else imports it
 os.environ["SDL_VIDEODRIVER"] = "dummy"
+os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 from queue import Queue, Empty
 from flask import Flask, render_template, Response, jsonify
