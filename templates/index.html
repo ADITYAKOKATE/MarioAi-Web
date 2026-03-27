@@ -547,7 +547,12 @@
         try {
             const res = await fetch('/status');
             const data = await res.json();
-            if (isRunning && !data.running) {
+            if (data.running && !isRunning) {
+                // If backend is running but frontend thinks it's idle (e.g. after refresh)
+                setRunning(true);
+                startPolling();
+            } else if (!data.running && isRunning) {
+                // If backend stopped but frontend thinks it's still running
                 setRunning(false);
                 stopPolling();
             }

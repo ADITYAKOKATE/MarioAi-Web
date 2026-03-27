@@ -223,7 +223,7 @@ def start_game():
         game_thread = threading.Thread(target=game_loop, daemon=True)
         game_thread.start()
         return jsonify({"status": "started"}), 200
-    return jsonify({"status": "already running"}), 400
+    return jsonify({"status": "already running"}), 200
 
 @app.route('/stop', methods=['POST'])
 def stop_game():
