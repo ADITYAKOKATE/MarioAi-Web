@@ -110,8 +110,11 @@ def play(model_path="mario_ppo_final"):
             if done:
                  print(f"Episode finished. Total Reward: {total_reward}")
                  
-                 # Check if goal was reached (Reward > 90)
-                 if total_reward > 90:
+                 # Check if goal was reached via info dictionary
+                 # Since it's a DummyVecEnv, info is a list of dictionaries
+                 is_goal = info[0].get("is_goal_reached", False)
+                 
+                 if is_goal:
                     print("\n🏆 Goal Reached! Stopping script.")
                     break
                  

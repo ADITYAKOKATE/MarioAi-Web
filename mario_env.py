@@ -105,6 +105,7 @@ class MarioEnv(gym.Env):
         GRAVITY = 0.8
         
         # Frame Skip Loop
+        is_goal_reached = False
         for _ in range(4):
             if terminated: break
             self.steps += 1
@@ -166,6 +167,7 @@ class MarioEnv(gym.Env):
             if player_rect.colliderect(goal_rect):
                 reward += 100
                 terminated = True
+                is_goal_reached = True
                 
             # Death (Pit)
             if self.player_pos[1] > self.window_height:
@@ -181,7 +183,7 @@ class MarioEnv(gym.Env):
             self.render()
 
         observation = self._get_obs()
-        return observation, total_reward, terminated, truncated, {}
+        return observation, total_reward, terminated, truncated, {"is_goal_reached": is_goal_reached}
 
     def _get_obs(self):
         # Draw everything to the full level surface

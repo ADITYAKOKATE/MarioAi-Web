@@ -3,285 +3,581 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mario AI Agent Dashboard</title>
-    <!-- Use Tailwind CSS for rapid styling -> The user wants a beautiful UI per system instructions -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Mario AI Agent — Live Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-deep: #080c14;
+            --bg-panel: #0d1420;
+            --bg-card: #111827;
+            --border: rgba(255,255,255,0.07);
+            --border-glow: rgba(99,179,237,0.3);
+            --red: #ef4444;
+            --orange: #f97316;
+            --green: #22c55e;
+            --blue: #38bdf8;
+            --yellow: #fbbf24;
+            --purple: #a78bfa;
+            --text-primary: #f8fafc;
+            --text-muted: #64748b;
+            --text-dim: #334155;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            background-color: #0f172a; /* Slate 900 */
-            color: #f8fafc; /* Slate 50 */
+            background: var(--bg-deep);
+            color: var(--text-primary);
             font-family: 'Inter', sans-serif;
-        }
-        
-        #log-container {
-            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
-            scrollbar-width: thin;
-            scrollbar-color: #475569 #1e293b;
+            min-height: 100vh;
+            overflow: hidden;
         }
 
-        #log-container::-webkit-scrollbar {
+        /* Animated background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .layout {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            grid-template-columns: 1fr 380px;
+            gap: 0;
+            height: 100vh;
+            padding: 16px;
+            gap: 16px;
+        }
+
+        /* ===== HEADER ===== */
+        header {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 14px 24px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo-badge {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 0 20px rgba(239,68,68,0.4);
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            font-weight: 800;
+            background: linear-gradient(90deg, #f97316, #fbbf24);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .header-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            margin-top: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 99px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            font-size: 0.75rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            transition: all 0.3s ease;
+        }
+
+        .status-dot {
             width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-dim);
+            transition: all 0.3s ease;
         }
 
-        #log-container::-webkit-scrollbar-track {
-            background: #1e293b;
+        .status-pill.running {
+            border-color: rgba(34,197,94,0.4);
+            color: var(--green);
         }
 
-        #log-container::-webkit-scrollbar-thumb {
-            background-color: #475569;
-            border-radius: 4px;
+        .status-pill.running .status-dot {
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 1.5s infinite;
         }
 
-        .log-info { color: #38bdf8; } /* Light Blue */
-        .log-success { color: #4ade80; } /* Green */
-        .log-error { color: #f87171; } /* Red */
-        .log-action { color: #cbd5e1; } /* Light Gray */
-        .log-highlight { color: #fbbf24; font-weight: bold; } /* Amber - for force jump */
-        
-        .glass-panel {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 1rem;
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 22px;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+        .btn-play {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: white;
+            box-shadow: 0 4px 20px rgba(34,197,94,0.3);
+        }
+        .btn-play:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(34,197,94,0.5); }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            box-shadow: 0 4px 20px rgba(239,68,68,0.3);
+        }
+        .btn-stop:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(239,68,68,0.5); }
+
+        /* ===== VIDEO PANEL ===== */
+        .video-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .panel-label {
+            padding: 12px 16px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-label-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--blue);
+        }
+
+        .video-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #videoFeed {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            image-rendering: pixelated;
+            display: block;
+        }
+
+        /* Victory overlay */
+        #victoryOverlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            backdrop-filter: blur(4px);
+        }
+
+        #victoryOverlay.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .victory-emoji {
+            font-size: 72px;
+            animation: bounce 0.6s ease infinite alternate;
+        }
+
+        @keyframes bounce {
+            from { transform: translateY(0); }
+            to { transform: translateY(-15px); }
+        }
+
+        .victory-text {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #fbbf24;
+            text-shadow: 0 0 30px rgba(251,191,36,0.8);
+            margin-top: 16px;
+            letter-spacing: -0.5px;
+        }
+
+        .victory-sub {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            margin-top: 8px;
+        }
+
+        /* ===== LOG PANEL ===== */
+        .log-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .log-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-clear {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-clear:hover { background: var(--bg-card); color: var(--text-primary); }
+
+        #logContainer {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68rem;
+            line-height: 1.6;
+            background: #060a12;
+            scrollbar-width: thin;
+            scrollbar-color: #1e293b #060a12;
+        }
+
+        #logContainer::-webkit-scrollbar { width: 4px; }
+        #logContainer::-webkit-scrollbar-track { background: #060a12; }
+        #logContainer::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
+
+        .log-line {
+            padding: 1px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .log-info    { color: #38bdf8; }
+        .log-action  { color: #94a3b8; }
+        .log-highlight { color: #fbbf24; font-weight: 600; }
+        .log-success { color: #22c55e; font-weight: 600; }
+        .log-error   { color: #f87171; }
+
+        /* Stats bar */
+        .stats-bar {
+            display: flex;
+            gap: 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .stat-item {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            border-right: 1px solid var(--border);
+        }
+
+        .stat-item:last-child { border-right: none; }
+
+        .stat-val {
+            font-size: 1.1rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+
+        .stat-lbl {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-top: 2px;
         }
     </style>
 </head>
-<body class="min-h-screen p-6">
+<body>
 
-    <div class="max-w-6xl mx-auto">
-        <!-- Header -->
-        <header class="mb-8 text-center sm:text-left flex flex-col sm:flex-row justify-between items-center bg-slate-800/50 p-6 rounded-2xl border border-slate-700 shadow-lg">
+<div class="layout">
+
+    <!-- HEADER -->
+    <header>
+        <div class="header-left">
+            <div class="logo-badge">🍄</div>
             <div>
-                <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-400 mb-2">
-                    Super Mario AI Dashboard
-                </h1>
-                <p class="text-slate-400">Live Reinforcement Learning (PPO) Evaluation</p>
+                <h1>Super Mario AI — Live Dashboard</h1>
+                <div class="header-sub">Reinforcement Learning • PPO Agent • Smart Heuristics</div>
             </div>
-            
-            <div class="mt-4 sm:mt-0 flex gap-4">
-                <button id="startBtn" onclick="startGame()" class="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    Play AI
-                </button>
-                <button id="stopBtn" onclick="stopGame()" disabled class="px-8 py-3 bg-slate-700 text-slate-400 cursor-not-allowed font-bold rounded-xl border border-slate-600 transition-all flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg>
-                    Stop
-                </button>
+        </div>
+        <div class="header-right">
+            <div class="status-pill" id="statusPill">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Idle</span>
             </div>
-        </header>
+            <button class="btn btn-play" id="startBtn" onclick="startGame()">
+                ▶ Play AI
+            </button>
+            <button class="btn btn-stop" id="stopBtn" onclick="stopGame()" disabled>
+                ■ Stop
+            </button>
+        </div>
+    </header>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Game Stream -->
-            <div class="lg:col-span-2 glass-panel p-2 flex flex-col justify-center items-center bg-black/50">
-                <div class="w-full relative rounded-lg overflow-hidden border border-slate-700" style="aspect-ratio: 256/240;">
-                    <!-- Canvas polled from /snapshot instead of MJPEG stream -->
-                    <canvas id="videoCanvas" width="256" height="240" class="w-full h-full bg-black" style="image-rendering: pixelated;"></canvas>
-                    
-                    <!-- Overlay state -->
-                    <div id="statusOverlay" class="absolute top-0 right-0 m-4 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-600 flex items-center gap-2">
-                        <span id="statusIndicator" class="w-3 h-3 rounded-full bg-slate-500"></span>
-                        <span id="statusText" class="text-xs font-semibold uppercase tracking-wider text-slate-300">Idle</span>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- Evolutions & Actions Log -->
-            <div class="glass-panel p-6 flex flex-col h-[600px] lg:h-auto">
-                <div class="flex items-center justify-between mb-4 border-b border-slate-700 pb-4">
-                    <h2 class="text-xl font-bold flex items-center gap-2">
-                        <svg class="w-6 h-6 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                        Actions & Evolution Logs
-                    </h2>
-                    <button onclick="clearLogs()" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 transition">Clear</button>
-                </div>
-                
-                <div id="log-container" class="flex-1 bg-slate-900 rounded-lg p-4 overflow-y-auto text-sm border border-slate-800 shadow-inner">
-                    <div class="log-info">System ready. Awaiting 'Play AI' command...</div>
-                </div>
+    <!-- VIDEO PANEL -->
+    <div class="video-panel">
+        <div class="panel-label">
+            <span class="panel-label-dot"></span>
+            Live Game Feed (MJPEG Stream)
+        </div>
+        <div class="video-wrapper">
+            <img id="videoFeed" src="/video_feed" alt="Game Stream">
+            <div id="victoryOverlay">
+                <div class="victory-emoji">🏆</div>
+                <div class="victory-text">Goal Reached!</div>
+                <div class="victory-sub" id="victoryPos"></div>
             </div>
         </div>
     </div>
 
-    <script>
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const logContainer = document.getElementById('log-container');
-        const statusIndicator = document.getElementById('statusIndicator');
-        const statusText = document.getElementById('statusText');
-        const videoCanvas = document.getElementById('videoCanvas');
-        const ctx = videoCanvas.getContext('2d');
+    <!-- LOG PANEL -->
+    <div class="log-panel">
+        <div class="panel-label" style="justify-content: space-between;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span class="panel-label-dot" style="background: var(--green);"></span>
+                Action Log
+            </div>
+            <div class="log-actions">
+                <button class="btn-clear" onclick="clearLogs()">Clear</button>
+            </div>
+        </div>
 
-        let logInterval = null;
-        let snapshotInterval = null;
-        let isRunning = false;
+        <div id="logContainer">
+            <div class="log-line log-info">System ready. Press 'Play AI' to start...</div>
+        </div>
 
-        // Snapshot polling - fetches a single JPEG and draws it to the canvas
-        function pollSnapshot() {
-            const img = new Image();
-            img.onload = () => {
-                ctx.drawImage(img, 0, 0, 256, 240);
-                URL.revokeObjectURL(img.src);
-            };
-            fetch('/snapshot')
-                .then(r => r.blob())
-                .then(blob => { img.src = URL.createObjectURL(blob); })
-                .catch(() => {});
+        <div class="stats-bar">
+            <div class="stat-item">
+                <div class="stat-val" id="statStep">0</div>
+                <div class="stat-lbl">Steps</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-val" id="statEpisode">0</div>
+                <div class="stat-lbl">Episodes</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-val" id="statPos">—</div>
+                <div class="stat-lbl">X Position</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const startBtn   = document.getElementById('startBtn');
+    const stopBtn    = document.getElementById('stopBtn');
+    const statusPill = document.getElementById('statusPill');
+    const statusDot  = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const logContainer = document.getElementById('logContainer');
+    const victoryOverlay = document.getElementById('victoryOverlay');
+    const victoryPos    = document.getElementById('victoryPos');
+
+    let logInterval = null;
+    let statusInterval = null;
+    let isRunning = false;
+    let stepCount = 0;
+    let episodeCount = 0;
+    let lastPos = '—';
+
+    function setRunning(running) {
+        isRunning = running;
+        if (running) {
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            statusPill.className = 'status-pill running';
+            statusText.textContent = 'Running';
+            victoryOverlay.classList.remove('visible');
+        } else {
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusPill.className = 'status-pill';
+            statusText.textContent = 'Idle';
+        }
+    }
+
+    async function startGame() {
+        const res = await fetch('/start', { method: 'POST' });
+        if (res.ok) {
+            clearLogs();
+            stepCount = 0;
+            episodeCount = 0;
+            document.getElementById('statStep').textContent = '0';
+            document.getElementById('statEpisode').textContent = '0';
+            document.getElementById('statPos').textContent = '—';
+            setRunning(true);
+            startPolling();
+        }
+    }
+
+    async function stopGame() {
+        await fetch('/stop', { method: 'POST' });
+        setRunning(false);
+        stopPolling();
+    }
+
+    function addLog(msg, type) {
+        const div = document.createElement('div');
+        div.className = `log-line log-${type}`;
+        div.textContent = msg;
+        logContainer.appendChild(div);
+        logContainer.scrollTop = logContainer.scrollHeight;
+
+        // Trim to last 500 lines
+        while (logContainer.children.length > 500) {
+            logContainer.removeChild(logContainer.firstChild);
         }
 
-        function startSnapshotPolling() {
-            if (!snapshotInterval) {
-                pollSnapshot();
-                snapshotInterval = setInterval(pollSnapshot, 100); // ~10fps
+        // Parse step info for stats
+        const stepMatch = msg.match(/^\[(\d+)\].*Pos:\s*\(([0-9.]+)/);
+        if (stepMatch) {
+            stepCount = parseInt(stepMatch[1]);
+            lastPos = stepMatch[2];
+            document.getElementById('statStep').textContent = stepCount;
+            document.getElementById('statPos').textContent = lastPos;
+        }
+
+        // Parse episode restarts
+        if (msg.includes("Restarting")) {
+            episodeCount++;
+            document.getElementById('statEpisode').textContent = episodeCount;
+        }
+
+        // Show victory overlay
+        if (msg.includes("GOAL REACHED")) {
+            const posMatch = msg.match(/\(([^)]+)\)/);
+            victoryPos.textContent = posMatch ? `Final position: ${posMatch[0]}` : '';
+            victoryOverlay.classList.add('visible');
+        }
+    }
+
+    function clearLogs() {
+        logContainer.innerHTML = '';
+    }
+
+    async function fetchLogs() {
+        try {
+            const res = await fetch('/logs');
+            const logs = await res.json();
+            logs.forEach(l => addLog(l.msg, l.type));
+        } catch (e) {}
+    }
+
+    async function checkStatus() {
+        try {
+            const res = await fetch('/status');
+            const data = await res.json();
+            if (isRunning && !data.running) {
+                setRunning(false);
+                stopPolling();
+            }
+        } catch (e) {
+            if (isRunning) {
+                setRunning(false);
+                stopPolling();
+                addLog('Connection lost.', 'error');
             }
         }
+    }
 
-        function stopSnapshotPolling() {
-            if (snapshotInterval) {
-                clearInterval(snapshotInterval);
-                snapshotInterval = null;
-            }
+    function startPolling() {
+        if (!logInterval) {
+            logInterval = setInterval(fetchLogs, 200);
+            statusInterval = setInterval(checkStatus, 1000);
         }
+    }
 
-        function updateUIState(running) {
-            isRunning = running;
-            if (running) {
-                // UI changes for running state
-                startBtn.disabled = true;
-                startBtn.className = "px-8 py-3 bg-slate-700 text-slate-400 cursor-not-allowed font-bold rounded-xl flex items-center gap-2";
-                
-                stopBtn.disabled = false;
-                stopBtn.className = "px-8 py-3 bg-red-500 hover:bg-red-400 text-white font-bold rounded-xl shadow-lg shadow-red-500/30 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-2";
-                
-                statusIndicator.className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
-                statusText.innerText = "Running";
-                statusText.className = "text-xs font-semibold uppercase tracking-wider text-emerald-400";
-                
-                startSnapshotPolling();
-            } else {
-                // UI changes for stopped state
-                startBtn.disabled = false;
-                startBtn.className = "px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-2";
-                
-                stopBtn.disabled = true;
-                stopBtn.className = "px-8 py-3 bg-slate-700 text-slate-400 cursor-not-allowed font-bold rounded-xl border border-slate-600 flex items-center gap-2";
-                
-                statusIndicator.className = "w-3 h-3 rounded-full bg-slate-500";
-                statusText.innerText = "Idle";
-                statusText.className = "text-xs font-semibold uppercase tracking-wider text-slate-300";
-                stopSnapshotPolling();
-            }
-        }
+    function stopPolling() {
+        clearInterval(logInterval);
+        clearInterval(statusInterval);
+        logInterval = null;
+        statusInterval = null;
+        // Fetch any remaining logs
+        setTimeout(fetchLogs, 500);
+    }
 
-        async function startGame() {
-            try {
-                const res = await fetch('/start', { method: 'POST' });
-                if (res.ok) {
-                    clearLogs();
-                    addLog("Starting server engine...", "info");
-                    updateUIState(true);
-                    startLogPolling();
-                } else {
-                    addLog("Failed to start game.", "error");
-                }
-            } catch (err) {
-                addLog(`Error connecting: ${err}`, "error");
-            }
-        }
-
-        async function stopGame() {
-            try {
-                const res = await fetch('/stop', { method: 'POST' });
-                if (res.ok) {
-                    addLog("Stopping engine...", "info");
-                    updateUIState(false);
-                    // Keep polling briefly to catch final logs
-                    setTimeout(stopLogPolling, 2000); 
-                }
-            } catch (err) {
-                addLog(`Error stopping: ${err}`, "error");
-            }
-        }
-
-        function addLog(message, type) {
-            const el = document.createElement('div');
-            el.className = `py-1 border-b border-slate-800/50 log-${type}`;
-            
-            // Highlight Force Jumps if present
-            if (message.includes("FORCE JUMP")) {
-                 el.innerHTML = message.replace("FORCE JUMP!", "<span class='log-highlight'>FORCE JUMP!</span>");
-            } else {
-                 el.innerText = message;
-            }
-            
-            logContainer.appendChild(el);
-            
-            // Auto scroll to bottom
-            logContainer.scrollTop = logContainer.scrollHeight;
-            
-            // Keep roughly only last 200 lines to prevent memory issues
-            while (logContainer.children.length > 200) {
-                logContainer.removeChild(logContainer.firstChild);
-            }
-        }
-
-        function clearLogs() {
-            logContainer.innerHTML = '';
-        }
-
-        async function fetchLogs() {
-            try {
-                const res = await fetch('/logs');
-                const logs = await res.json();
-                
-                logs.forEach(log => {
-                    addLog(log.msg, log.type);
-                });
-            } catch (e) {
-                // Ignore silent fetch errors during reload
-            }
-        }
-
-        // Periodically check if backend stopped autonomously (e.g. error)
-        async function checkStatus() {
-            try {
-                const res = await fetch('/status');
-                const data = await res.json();
-                if (isRunning !== data.running) {
-                    updateUIState(data.running);
-                    if (!data.running) stopLogPolling();
-                    else startLogPolling();
-                }
-            } catch (e) {
-                // server offline
-                if (isRunning) {
-                     updateUIState(false);
-                     stopLogPolling();
-                     addLog("Lost connection to server.", "error");
-                }
-            }
-        }
-
-        function startLogPolling() {
-            if (!logInterval) {
-                logInterval = setInterval(() => {
-                    fetchLogs();
-                    checkStatus();
-                }, 500); // 2 times a second
-            }
-        }
-
-        function stopLogPolling() {
-            if (logInterval) {
-                clearInterval(logInterval);
-                logInterval = null;
-            }
-        }
-        
-        // Initial status check
-        checkStatus();
-
-    </script>
+    // Initial status check
+    checkStatus();
+</script>
 </body>
 </html>
