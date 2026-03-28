@@ -152,7 +152,7 @@
 
         async function fetchState() {
             try {
-                let res = await fetch('http://localhost:5000/state');
+                let res = await fetch('/state');
                 let data = await res.json();
                 
                 // If level changed, visual wipe
@@ -171,7 +171,7 @@
 
         async function stepRL() {
             try {
-                let res = await fetch('http://localhost:5000/step', { method: 'POST' });
+                let res = await fetch('/step', { method: 'POST' });
                 let stepData = await res.json();
                 
                 if (stepData.episode > lastApiResponse.episode || stepData.level > lastApiResponse.level) {
@@ -311,7 +311,7 @@
         }
 
         document.getElementById('resetBtn').addEventListener('click', async () => {
-             await fetch('http://localhost:5000/reset', { method: 'POST' });
+             await fetch('/reset', { method: 'POST' });
              fetchState();
              trail = [];
         });

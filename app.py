@@ -1,6 +1,6 @@
 import random
 import time
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -162,6 +162,14 @@ class QAgent:
 
 env = GridWorld(15)
 agent = QAgent(env)
+
+@app.route('/')
+def serve_index():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory('.', path)
 
 @app.route('/state', methods=['GET'])
 def get_state():
