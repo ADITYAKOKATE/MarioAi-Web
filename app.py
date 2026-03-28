@@ -61,7 +61,12 @@ class GridWorld:
         if self.mario in self.enemies:
             return self.mario, -200, True # Hit Goomba
 
-        reward = -1 + (dist_before - dist_after) * 10
+        # Act accordingly based on the coordinates of the goal
+        if dist_after > dist_before:
+            reward = -15 # Strong penalty for moving away from goal coordinates
+        else:
+            reward = 10  # Reward for moving closer
+            
         return self.mario, reward, False
 
 class QAgent:
@@ -97,7 +102,25 @@ class QAgent:
         return self.q_table[state][action]
 
     def choose_action(self, state):
+        gx, gy = self.env.goal
+        x, y = state
+        
+        # Goal Coordinate Awareness: If adjacent to the goal, act accordingly and step into it directly
+        if abs(gx - x) + abs(gy - y) == 1:
+            if gx > x: return 'RIGHT'
+            if gx < x: return 'LEFT'
+            if gy > y: return 'DOWN'
+            if gy < y: return 'UP'
+
         if random.random() < self.epsilon:
+            # Smart exploration: Bias random actions towards the goal coordinates
+            if random.random() < 0.6: 
+                opts = []
+                if gx > x: opts.append('RIGHT')
+                elif gx < x: opts.append('LEFT')
+                if gy > y: opts.append('DOWN')
+                elif gy < y: opts.append('UP')
+                if opts: return random.choice(opts)
             return random.choice(self.env.actions)
             
         self.get_q(state, self.env.actions[0]) # ensure state init
