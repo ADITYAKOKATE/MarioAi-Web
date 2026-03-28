@@ -175,34 +175,17 @@ def game_loop():
         log_queue.put({"type": "info", "msg": "Game stopped."})
 
 
-# --- MJPEG Stream Generator ---
-def generate_frames():
-    """Yields MJPEG frames forever.
-
-    - If game is running: pull real frames from the queue and stream them.
-    - If no frame available: send a 'waiting' placeholder so the browser
-      <img> tag stays alive and immediately receives frames when the
-      game starts (the connection must NEVER close on the server side).
-    """
-    blank = np.zeros((480, 512, 3), dtype=np.uint8)
-    cv2.putText(blank, "Waiting for game...", (80, 240),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 100, 100), 2)
-    _, blank_buf = cv2.imencode('.jpg', blank)
-    blank_bytes = blank_buf.tobytes()
-
-    while True:
-        try:
-            # Block up to 1 s for a real frame.
-            # gevent makes this cooperative — other workers are not blocked.
-            frame_bytes = frame_queue.get(timeout=1.0)
-        except Empty:
-            # No real frame — send the placeholder and keep the connection open.
-            frame_bytes = blank_bytes
-
-        yield (
-            b'--frame\r\n'
-            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
-        )
+# --- Blank frame (pre-built once) ---
+_blank_frame_bytes = None
+def _get_blank_frame():
+    global _blank_frame_bytes
+    if _blank_frame_bytes is None:
+        blank = np.zeros((480, 512, 3), dtype=np.uint8)
+        cv2.putText(blank, "Waiting for game...", (80, 240),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 100, 100), 2)
+        _, buf = cv2.imencode('.jpg', blank)
+        _blank_frame_bytes = buf.tobytes()
+    return _blank_frame_bytes
 
 
 # --- Flask Routes ---
@@ -211,12 +194,24 @@ def generate_frames():
 def index():
     return render_template('index.html')
 
-@app.route('/video_feed')
-def video_feed():
-    """MJPEG stream route - the browser <img> tag points here."""
+@app.route('/frame')
+def get_frame():
+    """Return the latest game frame as a single JPEG.
+    The browser polls this endpoint at ~30fps instead of holding
+    one permanent streaming connection (which caused worker timeouts).
+    """
+    try:
+        frame_bytes = frame_queue.get_nowait()
+    except Empty:
+        frame_bytes = _get_blank_frame()
+
     return Response(
-        generate_frames(),
-        mimetype='multipart/x-mixed-replace; boundary=frame'
+        frame_bytes,
+        mimetype='image/jpeg',
+        headers={
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache',
+        }
     )
 
 @app.route('/start', methods=['POST'])

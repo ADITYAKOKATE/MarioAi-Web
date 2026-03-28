@@ -397,10 +397,10 @@
     <div class="video-panel">
         <div class="panel-label">
             <span class="panel-label-dot"></span>
-            Live Game Feed (MJPEG Stream)
+            Live Game Feed
         </div>
         <div class="video-wrapper">
-            <img id="videoFeed" src="/video_feed" alt="Game Stream">
+        <canvas id="videoFeed" width="512" height="480"></canvas>
             <div id="victoryOverlay">
                 <div class="victory-emoji">🏆</div>
                 <div class="victory-text">Goal Reached!</div>
@@ -487,6 +487,7 @@
             document.getElementById('statPos').textContent = '—';
             setRunning(true);
             startPolling();
+            startFramePolling();  // start video polling
         }
     }
 
@@ -494,6 +495,8 @@
         await fetch('/stop', { method: 'POST' });
         setRunning(false);
         stopPolling();
+        // keep video polling 3 s so last frame stays visible
+        setTimeout(stopFramePolling, 3000);
     }
 
     function addLog(msg, type) {
@@ -580,6 +583,61 @@
         // Fetch any remaining logs
         setTimeout(fetchLogs, 500);
     }
+
+    // ── Frame Polling (replaces MJPEG streaming) ──────────────────────────
+    // Instead of one permanent /video_feed connection (which Gunicorn kills
+    // after 30 s), we fire a quick /frame fetch every 50 ms and draw the
+    // returned JPEG onto a canvas. Each request is ~1-3 ms — no timeouts.
+    const canvas = document.getElementById('videoFeed');
+    const ctx    = canvas.getContext('2d');
+    let prevUrl  = null;   // keep ref so we can revoke old blob URL
+    let polling  = false;
+
+    // Draw the initial blank placeholder
+    (function drawBlank() {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#444';
+        ctx.font = '18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Waiting for game...', canvas.width / 2, canvas.height / 2);
+    })();
+
+    async function pollFrame() {
+        try {
+            const res = await fetch('/frame', { cache: 'no-store' });
+            if (res.ok) {
+                const blob = await res.blob();
+                const url  = URL.createObjectURL(blob);
+                const img  = new Image();
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    if (prevUrl) URL.revokeObjectURL(prevUrl);
+                    prevUrl = url;
+                };
+                img.onerror = () => URL.revokeObjectURL(url);
+                img.src = url;
+            }
+        } catch (_) {}
+    }
+
+    function startFramePolling() {
+        if (polling) return;
+        polling = true;
+        (async function loop() {
+            while (polling) {
+                await pollFrame();
+                await new Promise(r => setTimeout(r, 50)); // ~20 fps
+            }
+        })();
+    }
+
+    function stopFramePolling() {
+        polling = false;
+    }
+
+    // Start polling immediately so blank frame shows on page load
+    startFramePolling();
 
     // Initial status check
     checkStatus();
