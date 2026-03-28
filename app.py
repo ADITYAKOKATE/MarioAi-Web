@@ -1,15 +1,15 @@
+# MUST be the very first thing — before ANY other imports
+try:
+    from gevent import monkey
+    monkey.patch_all(threads=True)
+except ImportError:
+    pass
+
 import time
 import os
 import threading
 import numpy as np
 import cv2
-
-# Monkey-patch for gevent workers (must be first)
-try:
-    from gevent import monkey
-    monkey.patch_all()
-except ImportError:
-    pass
 
 # --- Make pygame headless BEFORE anything else imports it ---
 os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -177,9 +177,12 @@ def game_loop():
 
 # --- MJPEG Stream Generator ---
 def generate_frames():
-    """A generator that yields MJPEG frames.
-    - While game is running: stream real frames from queue.
-    - While game is NOT running: yield a blank 'waiting' frame and exit.
+    """Yields MJPEG frames forever.
+
+    - If game is running: pull real frames from the queue and stream them.
+    - If no frame available: send a 'waiting' placeholder so the browser
+      <img> tag stays alive and immediately receives frames when the
+      game starts (the connection must NEVER close on the server side).
     """
     blank = np.zeros((480, 512, 3), dtype=np.uint8)
     cv2.putText(blank, "Waiting for game...", (80, 240),
@@ -187,28 +190,19 @@ def generate_frames():
     _, blank_buf = cv2.imencode('.jpg', blank)
     blank_bytes = blank_buf.tobytes()
 
-    # Yield the blank frame immediately so the browser img tag shows something
-    yield (b'--frame\r\n'
-           b'Content-Type: image/jpeg\r\n\r\n' + blank_bytes + b'\r\n')
-
-    idle_cycles = 0
     while True:
         try:
-            frame_bytes = frame_queue.get(timeout=0.5)
-            idle_cycles = 0
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            # Block up to 1 s for a real frame.
+            # gevent makes this cooperative — other workers are not blocked.
+            frame_bytes = frame_queue.get(timeout=1.0)
         except Empty:
-            if not game_running:
-                idle_cycles += 1
-                # Send a blank frame so browser stays connected
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + blank_bytes + b'\r\n')
-                # After a few idle cycles, stop the generator so the connection closes cleanly
-                if idle_cycles >= 5:
-                    return
-            # If game IS running but no frame yet, just wait and retry
-            time.sleep(0.05)
+            # No real frame — send the placeholder and keep the connection open.
+            frame_bytes = blank_bytes
+
+        yield (
+            b'--frame\r\n'
+            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
+        )
 
 
 # --- Flask Routes ---
