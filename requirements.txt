@@ -1,10 +1,2 @@
-flask
-gunicorn
-pygame
-gymnasium
-stable-baselines3
-torch
-opencv-python-headless
-matplotlib
-shimmy
-gevent
+Flask
+flask-cors

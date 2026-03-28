@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mario RL Python Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .container {
+            max-width: 1300px;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 2rem;
+            align-items: start;
+        }
+        .visuals {
+            display: grid;
+            grid-template-rows: auto auto;
+            gap: 20px;
+        }
+        .game-container {
+            border: 1px solid rgba(255,255,255,0.1);
+            background: #05050f; 
+            box-shadow: inset 0 0 50px rgba(0, 243, 255, 0.05);
+            border-radius: 15px;
+            width: 510px;
+            height: 510px;
+            margin: 0 auto;
+        }
+        canvas {
+            border-radius: 15px;
+        }
+        .chart-box {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            height: 250px;
+        }
+        .stat-card.mega {
+            background: rgba(57, 255, 20, 0.1);
+            border-color: rgba(57, 255, 20, 0.3);
+        }
+        .stat-card.mega h3 { color: #39ff14; }
+    </style>
+</head>
+<body>
+    <div class="glow-sphere"></div>
+    <div class="glow-sphere alt"></div>
+    
+    <div class="container">
+        <!-- Dashboard UI -->
+        <aside class="dashboard glass">
+            <h1>Python AI Engine</h1>
+            <p class="subtitle">Procedurally generated mazes with infinite learning architecture.</p>
+            
+            <div class="stats-grid">
+                <div class="stat-card mega">
+                    <h3>Level</h3>
+                    <span id="levelLabel" class="highlight glow" style="color:#39ff14">1</span>
+                </div>
+                <div class="stat-card">
+                    <h3>Time Alive</h3>
+                    <span id="timeLabel">0.0s</span>
+                </div>
+                <div class="stat-card">
+                    <h3>Episode</h3>
+                    <span id="genLabel" class="highlight">1</span>
+                </div>
+                <div class="stat-card">
+                    <h3>Exp Rate</h3>
+                    <span id="aliveLabel">20%</span>
+                </div>
+                <div class="stat-card">
+                    <h3>Step Reward</h3>
+                    <span id="scoreLabel">0</span>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Score</h3>
+                    <span id="maxFitLabel" class="highlight glow">0</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <p class="hint">When the AI reaches the goal, the maze reorganizes, wiping the AI's memory so you can watch it solve a new puzzle from scratch.</p>
+                <button id="resetBtn" class="pill-btn">Reset Simulation</button>
+            </div>
+        </aside>
+
+        <!-- Game & Chart View -->
+        <div class="visuals">
+            <main class="game-container glass">
+                <canvas id="gridCanvas" width="510" height="510"></canvas>
+            </main>
+            
+            <div class="chart-box">
+                <canvas id="growthChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gridCanvas');
+        const ctx = canvas.getContext('2d');
+        const tileSize = 34; // 15x15 grid => 510x510 pixels
+
+        let lastApiResponse = {
+            mario: [0, 0],
+            goal: [14, 14],
+            enemies: [],
+            walls: [],
+            history: []
+        };
+        
+        let visualAgent = { x: 17, y: 17 };
+        let trail = [];
+
+        // Setup Chart
+        const chartCtx = document.getElementById('growthChart').getContext('2d');
+        const growthChart = new Chart(chartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Total Reward per Episode',
+                    data: [],
+                    borderColor: '#00f3ff',
+                    backgroundColor: 'rgba(0, 243, 255, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 2,
+                    pointBackgroundColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: 'rgba(255,255,255,0.7)' } }
+                },
+                scales: {
+                    x: { ticks: { color: 'rgba(255,255,255,0.5)' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { ticks: { color: 'rgba(255,255,255,0.5)' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            }
+        });
+
+        async function fetchState() {
+            try {
+                let res = await fetch('http://localhost:5000/state');
+                let data = await res.json();
+                
+                // If level changed, visual wipe
+                if(data.level > (lastApiResponse.level || 1)) {
+                    // flash effect simulated implicitly by new wall layout
+                }
+
+                lastApiResponse = data;
+                
+                visualAgent.x = lastApiResponse.mario[0] * tileSize + tileSize/2;
+                visualAgent.y = lastApiResponse.mario[1] * tileSize + tileSize/2;
+                trail = [];
+                
+            } catch (e) {}
+        }
+
+        async function stepRL() {
+            try {
+                let res = await fetch('http://localhost:5000/step', { method: 'POST' });
+                let stepData = await res.json();
+                
+                if (stepData.episode > lastApiResponse.episode || stepData.level > lastApiResponse.level) {
+                     trail = [];
+                     visualAgent.x = 17;
+                     visualAgent.y = 17;
+                }
+                
+                // Big Level Up Check
+                if (stepData.level > lastApiResponse.level) {
+                    console.log("LEVEL UP!");
+                    await fetchState(); // Pull completely new map
+                }
+
+                lastApiResponse.mario = [stepData.x, stepData.y];
+                lastApiResponse.episode = stepData.episode;
+                lastApiResponse.level = stepData.level;
+                
+                // Update Dashboard Elements
+                document.getElementById('genLabel').innerText = stepData.episode;
+                document.getElementById('levelLabel').innerText = stepData.level;
+                document.getElementById('timeLabel').innerText = stepData.time_alive + "s";
+                
+                let scoreEl = document.getElementById('scoreLabel');
+                scoreEl.innerText = stepData.reward > 0 ? "+" + stepData.reward : stepData.reward;
+                scoreEl.style.color = stepData.reward > 0 ? '#39ff14' : '#ff3366';
+                
+                document.getElementById('maxFitLabel').innerText = stepData.total_reward;
+                
+                // Update Chart
+                if (stepData.history && stepData.history.length > 0) {
+                    growthChart.data.labels = stepData.history.map((_, i) => "Ep " + (i+1));
+                    growthChart.data.datasets[0].data = stepData.history;
+                    growthChart.update('none'); // silent update
+                }
+
+            } catch (e) {}
+           
+            setTimeout(() => requestAnimationFrame(stepRL), 75); 
+        }
+
+        // Dedicated 60FPS Render Loop
+        function renderLoop() {
+            ctx.fillStyle = '#070714';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.lineWidth = 1;
+            for(let i = 0; i <= 15; i++) {
+                ctx.beginPath(); ctx.moveTo(i*tileSize, 0); ctx.lineTo(i*tileSize, canvas.height); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, i*tileSize); ctx.lineTo(canvas.width, i*tileSize); ctx.stroke();
+            }
+
+            // Walls
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00f3ff';
+            ctx.fillStyle = 'rgba(0, 243, 255, 0.15)';
+            ctx.strokeStyle = 'rgba(0, 243, 255, 0.8)';
+            ctx.lineWidth = 2;
+            (lastApiResponse.walls || []).forEach(w => {
+                let px = w[0]*tileSize + 4;
+                let py = w[1]*tileSize + 4;
+                let s = tileSize - 8;
+                ctx.fillRect(px, py, s, s);
+                ctx.strokeRect(px, py, s, s);
+            });
+
+            // Enemies
+            ctx.shadowColor = '#ff3366';
+            ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+            ctx.strokeStyle = '#ff3366';
+            let time = Date.now() / 150;
+            let enemyPulse = Math.abs(Math.sin(time)) * 3;
+            
+            (lastApiResponse.enemies || []).forEach(e => {
+                let px = e[0]*tileSize + tileSize/2;
+                let py = e[1]*tileSize + tileSize/2;
+                let s = (tileSize/2 - 6) + enemyPulse;
+                ctx.beginPath(); ctx.arc(px, py, s, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            });
+
+            // Goal
+            let g = lastApiResponse.goal || [14,14];
+            let gx = g[0]*tileSize + tileSize/2;
+            let gy = g[1]*tileSize + tileSize/2;
+            let goalPulse = Math.abs(Math.sin(time * 0.5)) * 4;
+            
+            ctx.shadowColor = '#39ff14';
+            ctx.fillStyle = 'rgba(57, 255, 20, 0.3)';
+            ctx.strokeStyle = '#39ff14';
+            ctx.beginPath(); ctx.arc(gx, gy, (tileSize/2 - 4) + goalPulse, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(gx, gy, tileSize/4, 0, Math.PI*2); ctx.fillStyle = '#39ff14'; ctx.fill();
+
+            // Agent Position Smoothing
+            let targetX = (lastApiResponse.mario || [0,0])[0] * tileSize + tileSize/2;
+            let targetY = (lastApiResponse.mario || [0,0])[1] * tileSize + tileSize/2;
+            
+            let dist = Math.hypot(targetX - visualAgent.x, targetY - visualAgent.y);
+            if (dist > tileSize * 3) {
+                visualAgent.x = targetX;
+                visualAgent.y = targetY;
+                trail = []; 
+            } else {
+                visualAgent.x += (targetX - visualAgent.x) * 0.15;
+                visualAgent.y += (targetY - visualAgent.y) * 0.15;
+            }
+
+            if (trail.length === 0 || Math.hypot(trail[trail.length-1].x - visualAgent.x, trail[trail.length-1].y - visualAgent.y) > 2) {
+                trail.push({x: visualAgent.x, y: visualAgent.y});
+            }
+            if(trail.length > 40) trail.shift();
+            
+            ctx.shadowBlur = 0; 
+            ctx.beginPath();
+            for(let i=0; i<trail.length; i++){
+                let pt = trail[i];
+                if(i===0) ctx.moveTo(pt.x, pt.y);
+                else ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; 
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            // Orb drawing
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ffffff';
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(visualAgent.x, visualAgent.y, tileSize/2 - 8, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = '#aaccff';
+            ctx.fillStyle = '#eef5ff';
+            ctx.beginPath(); ctx.arc(visualAgent.x, visualAgent.y, tileSize/4 - 2, 0, Math.PI*2); ctx.fill();
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        document.getElementById('resetBtn').addEventListener('click', async () => {
+             await fetch('http://localhost:5000/reset', { method: 'POST' });
+             fetchState();
+             trail = [];
+        });
+
+        fetchState().then(() => {
+            stepRL();
+            renderLoop();
+        });
+    </script>
+</body>
+</html>

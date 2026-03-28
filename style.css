@@ -1,0 +1,231 @@
+:root {
+  --bg-color: #050b14;
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --text-primary: #e2e8f0;
+  --text-muted: #94a3b8;
+  --accent: #ff4545;  /* Mario Red */
+  --accent-glow: rgba(255, 69, 69, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Background Ambient Glows */
+.glow-sphere {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
+  border-radius: 50%;
+  top: -20%;
+  left: -10%;
+  z-index: -1;
+  filter: blur(80px);
+  animation: pulse 8s infinite alternate;
+}
+
+.glow-sphere.alt {
+  background: radial-gradient(circle, rgba(50, 205, 50, 0.3) 0%, transparent 60%); /* Luigi Green */
+  top: auto;
+  bottom: -20%;
+  left: auto;
+  right: -10%;
+  animation: pulse 10s infinite alternate-reverse;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.1); opacity: 1; }
+}
+
+.container {
+  display: flex;
+  gap: 2rem;
+  max-width: 1200px;
+  width: 90%;
+  z-index: 10;
+}
+
+/* Glassmorphism Classes */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* Dashboard Sidebar */
+.dashboard {
+  flex: 1;
+  padding: 2.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(90deg, #fff, var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 2rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+.stat-card {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 16px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: transform 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--accent);
+  box-shadow: 0 0 15px var(--accent-glow);
+}
+
+.stat-card h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.stat-card span {
+  font-size: 2.5rem;
+  font-weight: 700;
+  display: block;
+}
+
+.highlight {
+  color: var(--accent);
+}
+
+.glow {
+  text-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* Slider Controls */
+.controls {
+  margin-top: auto;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 1.5rem;
+}
+
+.controls label {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+input[type=range] {
+  width: 100%;
+  appearance: none;
+  background: rgba(255,255,255,0.1);
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  margin-bottom: 0.5rem;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+}
+
+.credit {
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.3);
+  text-align: center;
+}
+
+.pill-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 0 10px var(--accent-glow);
+  margin-top: 1rem;
+}
+.pill-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+/* Game Canvas container */
+.game-container {
+  flex: none;
+  width: 510px;
+  height: 510px;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+canvas {
+  /* Using exact pixel rendering to match original retro feel but smooth */
+  image-rendering: pixelated;
+  border-radius: 23px; /* Slightly less than parent */
+}
+
+/* Responsive */
+@media (max-width: 1000px) {
+  .container {
+    flex-direction: column;
+    align-items: center;
+  }
+}

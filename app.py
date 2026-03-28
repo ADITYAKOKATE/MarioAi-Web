@@ -1,256 +1,194 @@
-# MUST be the very first thing — before ANY other imports
-try:
-    from gevent import monkey
-    monkey.patch_all(threads=True)
-except ImportError:
-    pass
-
+import random
 import time
-import os
-import threading
-import numpy as np
-import cv2
-
-# --- Make pygame headless BEFORE anything else imports it ---
-os.environ["SDL_VIDEODRIVER"] = "dummy"
-os.environ["SDL_AUDIODRIVER"] = "dummy"
-
-from queue import Queue, Empty
-from flask import Flask, render_template, jsonify, Response
+from flask import Flask, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app) # Allow local testing HTML to hit Python API
 
-# --- Global State ---
-game_running = False
-frame_queue = Queue(maxsize=300)
-log_queue = Queue(maxsize=500)
-game_thread = None
-goal_reached_flag = False  # Global flag to signal the frontend
+class GridWorld:
+    def __init__(self, size=15):
+        self.size = size
+        self.start = (0, 0)
+        self.goal = (size-1, size-1)
+        self.mario = self.start
+        self.level_num = 1
+        self.walls = []
+        self.enemies = []
+        self.actions = ['UP', 'DOWN', 'LEFT', 'RIGHT']
+        self.generate_map()
 
-def make_env():
-    def _init():
-        from mario_env import MarioEnv
-        env = MarioEnv(render_mode="rgb_array")
-        return env
-    return _init
+    def generate_map(self):
+        self.walls = []
+        self.enemies = []
+        self.mario = self.start
+        
+        # Procedurally generate 20 random walls
+        for _ in range(20):
+            x, y = random.randint(1, self.size-1), random.randint(1, self.size-1)
+            # Leave the start and goal adjacent tiles slightly open
+            if (x,y) not in self.walls and (x,y) != self.start and (x,y) != self.goal and (x,y) != (1,0) and (x,y) != (0,1) and (x,y) != (13,14) and (x,y) != (14,13):
+                self.walls.append((x,y))
+                
+        # Procedurally generate 8 random Goomba threats
+        for _ in range(8):
+            x, y = random.randint(1, self.size-2), random.randint(1, self.size-2)
+            if (x,y) not in self.walls and (x,y) not in self.enemies and (x,y) != self.start and (x,y) != self.goal:
+                self.enemies.append((x,y))
 
-def capture_frame(mario_env):
-    """Capture a frame from the mario environment as JPEG bytes."""
-    import pygame
-    view_rect = pygame.Rect(int(mario_env.camera_x), 0, mario_env.window_width, mario_env.window_height)
-    viewport = mario_env.surf.subsurface(view_rect)
-    view_str = pygame.image.tostring(viewport, "RGB")
-    frame = np.frombuffer(view_str, dtype=np.uint8).reshape((mario_env.window_height, mario_env.window_width, 3))
-    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    # Scale up for better visibility in browser
-    frame_bgr = cv2.resize(frame_bgr, (512, 480), interpolation=cv2.INTER_NEAREST)
-    _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 90])
-    return buffer.tobytes()
+    def reset_mario(self):
+        self.mario = self.start
+        return self.mario
 
-def push_frame(frame_bytes):
-    """Put a frame in the queue, dropping the oldest if full."""
-    if frame_queue.full():
-        try:
-            frame_queue.get_nowait()
-        except Empty:
-            pass
-    frame_queue.put(frame_bytes)
+    def step(self, action):
+        x, y = self.mario
+        dist_before = abs(self.goal[0] - x) + abs(self.goal[1] - y)
+        
+        if action == 'UP': y -= 1
+        elif action == 'DOWN': y += 1
+        elif action == 'LEFT': x -= 1
+        elif action == 'RIGHT': x += 1
 
-def game_loop():
-    global game_running, goal_reached_flag
+        if x < 0 or x >= self.size or y < 0 or y >= self.size or (x,y) in self.walls:
+            return self.mario, -10, False # Wall penalty
 
-    from stable_baselines3 import PPO
-    from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
-    import pygame
+        self.mario = (x, y)
+        dist_after = abs(self.goal[0] - x) + abs(self.goal[1] - y)
 
-    env = None
-    try:
-        env = DummyVecEnv([make_env()])
-        env = VecFrameStack(env, n_stack=4)
+        if self.mario == self.goal:
+            return self.mario, 500, True # Reached Flag
+            
+        if self.mario in self.enemies:
+            return self.mario, -200, True # Hit Goomba
 
-        # Load model
-        model = None
-        for path in ["mario_ppo_final", "mario_ppo_interrupted", "train/mario_model_200000_steps"]:
-            try:
-                model = PPO.load(path)
-                log_queue.put({"type": "info", "msg": f"✅ Model loaded: {path}"})
-                break
-            except Exception:
-                pass
+        reward = -1 + (dist_before - dist_after) * 10
+        return self.mario, reward, False
 
-        if model is None:
-            log_queue.put({"type": "error", "msg": "❌ Could not find trained model."})
-            game_running = False
-            return
+class QAgent:
+    def __init__(self, env):
+        self.env = env
+        self.start_time = time.time()
+        self.reset_learning()
 
-        log_queue.put({"type": "info", "msg": "--- Starting Smart Play Loop ---"})
-        log_queue.put({"type": "info", "msg": "Columns: [Step] | Action | Position | Notes"})
+    def reset_learning(self):
+        self.q_table = {}
+        self.alpha = 0.5
+        self.gamma = 0.95
+        self.epsilon = 0.05 
+        self.episode = 1
+        self.total_reward = 0
+        self.steps_taken = 0
+        self.reward_history = [] 
 
-        obs = env.reset()
-        total_reward = 0
-        step = 0
-        stuck_counter = 0
-        last_x_pos = 0
-        mario = env.envs[0]
+    def get_q(self, state, action):
+        if state not in self.q_table:
+            self.q_table[state] = {}
+            for a in self.env.actions:
+                x, y = state
+                if a == 'UP': y -= 1
+                elif a == 'DOWN': y += 1
+                elif a == 'LEFT': x -= 1
+                elif a == 'RIGHT': x += 1
+                
+                # Heuristic Initialization: The AI mathematically "sees" the goal
+                dist = abs(self.env.goal[0] - x) + abs(self.env.goal[1] - y)
+                self.q_table[state][a] = -dist * 5.0
+                
+        return self.q_table[state][action]
 
-        # Capture and push the initial frame
-        push_frame(capture_frame(mario))
+    def choose_action(self, state):
+        if random.random() < self.epsilon:
+            return random.choice(self.env.actions)
+            
+        self.get_q(state, self.env.actions[0]) # ensure state init
+        
+        max_q = max(self.q_table[state].values())
+        best_actions = [a for a, q in self.q_table[state].items() if q == max_q]
+        return random.choice(best_actions)
 
-        while game_running:
-            action, _states = model.predict(obs, deterministic=True)
-
-            # --- Smart Heuristics (same as smart_play.py) ---
-            current_x = mario.player_pos[0]
-            current_y = mario.player_pos[1]
-
-            if abs(current_x - last_x_pos) < 1:
-                stuck_counter += 1
-            else:
-                stuck_counter = 0
-            last_x_pos = current_x
-
-            heuristic_active = False
-            if stuck_counter > 10:
-                action = [2]  # FORCE JUMP
-                heuristic_active = True
-                if stuck_counter > 15:
-                    stuck_counter = 0
-
-            if (380 < current_x < 400) or (780 < current_x < 800) or (1280 < current_x < 1300):
-                action = [2]
-                heuristic_active = True
-                stuck_counter = 0
-
-            # Step environment
-            obs, reward, done, info = env.step(action)
-            total_reward += reward
-
-            # Capture frame IMMEDIATELY after step - before any delays
-            frame = capture_frame(mario)
-            push_frame(frame)
-
-            # Log every step (like smart_play.py)
-            act_str = ["Stay", "Right", "Jump"][int(action[0])]
-            note = "*** FORCE JUMP ***" if heuristic_active else ""
-            log_msg = f"[{step:04d}] | {act_str:5} | Pos: ({current_x:.1f}, {current_y:.1f}) {note}"
-            log_queue.put({"type": "action" if not heuristic_active else "highlight", "msg": log_msg})
-
-            step += 1
-            time.sleep(1 / 30.0)  # ~30fps
-
-            if done:
-                final_reward = float(total_reward[0]) if isinstance(total_reward, np.ndarray) else float(total_reward)
-                is_goal = info[0].get("is_goal_reached", False)
-
-                log_queue.put({"type": "info", "msg": f"Episode finished. Total Reward: {final_reward:.1f}"})
-
-                if is_goal:
-                    log_queue.put({"type": "success", "msg": f"🏆 GOAL REACHED! Final Pos: ({current_x:.1f}, {current_y:.1f})"})
-                    goal_reached_flag = True
-                    # Keep streaming for 2 seconds so user can see the finish
-                    for _ in range(60):
-                        if not game_running:
-                            break
-                        push_frame(capture_frame(mario))
-                        time.sleep(1 / 30.0)
-                    break
-                else:
-                    log_queue.put({"type": "error", "msg": "❌ Mario didn't reach the flag. Restarting..."})
-                    obs = env.reset()
-                    total_reward = 0
-                    stuck_counter = 0
-                    step = 0
-                    log_queue.put({"type": "info", "msg": "-" * 50})
-
-    except Exception as e:
-        import traceback
-        tb_str = traceback.format_exc()
-        print(f"GAME LOOP ERROR:\n{tb_str}")
-        log_queue.put({"type": "error", "msg": f"Error: {str(e)}"})
-
-    finally:
-        if env:
-            env.close()
-        game_running = False
-        log_queue.put({"type": "info", "msg": "Game stopped."})
-
-
-# --- Blank frame (pre-built once) ---
-_blank_frame_bytes = None
-def _get_blank_frame():
-    global _blank_frame_bytes
-    if _blank_frame_bytes is None:
-        blank = np.zeros((480, 512, 3), dtype=np.uint8)
-        cv2.putText(blank, "Waiting for game...", (80, 240),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 100, 100), 2)
-        _, buf = cv2.imencode('.jpg', blank)
-        _blank_frame_bytes = buf.tobytes()
-    return _blank_frame_bytes
-
-
-# --- Flask Routes ---
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/frame')
-def get_frame():
-    """Return the latest game frame as a single JPEG.
-    The browser polls this endpoint at ~30fps instead of holding
-    one permanent streaming connection (which caused worker timeouts).
-    """
-    try:
-        frame_bytes = frame_queue.get_nowait()
-    except Empty:
-        frame_bytes = _get_blank_frame()
-
-    return Response(
-        frame_bytes,
-        mimetype='image/jpeg',
-        headers={
-            'Cache-Control': 'no-store, no-cache, must-revalidate',
-            'Pragma': 'no-cache',
+    def learn_step(self):
+        state = self.env.mario
+        action = self.choose_action(state)
+        next_state, reward, done = self.env.step(action)
+        
+        current_q = self.get_q(state, action)
+        
+        if done and reward > 0:
+            max_next_q = 0 # Terminal success
+        elif done and reward < 0:
+            max_next_q = 0 # Terminal fail
+        else:
+            if next_state not in self.q_table:
+                self.q_table[next_state] = {a: 0.0 for a in self.env.actions}
+            max_next_q = max(self.q_table[next_state].values())
+            
+        new_q = current_q + self.alpha * (reward + self.gamma * max_next_q - current_q)
+        self.q_table[state][action] = new_q
+        self.total_reward += reward
+        self.steps_taken += 1
+        
+        res = {
+            "x": next_state[0],
+            "y": next_state[1],
+            "reward": reward,
+            "done": done,
+            "episode": self.episode,
+            "total_reward": round(self.total_reward, 2),
+            "steps": self.steps_taken,
+            "level": self.env.level_num,
+            "history": self.reward_history,
+            "time_alive": round(time.time() - self.start_time, 1),
+            "goal_reached": (reward == 500)
         }
-    )
+        
+        if done or self.steps_taken > 200: 
+            self.reward_history.append(round(self.total_reward, 2))
+            if len(self.reward_history) > 50:
+                self.reward_history.pop(0) # Keep last 50 episodes for graph
+                
+            if reward == 500: # Reached goal!
+                self.env.level_num += 1
+                self.env.generate_map()
+                self.reset_learning() # Wipe brain for the new puzzle
+            else:
+                self.episode += 1
+                self.total_reward = 0
+                self.steps_taken = 0
+                self.env.reset_mario()
+                if self.episode % 3 == 0 and self.epsilon > 0.05:
+                    self.epsilon *= 0.8
+                
+        return res
 
-@app.route('/start', methods=['POST'])
-def start_game():
-    global game_running, game_thread, goal_reached_flag
-    if not game_running:
-        game_running = True
-        goal_reached_flag = False
-        while not frame_queue.empty():
-            frame_queue.get()
-        while not log_queue.empty():
-            log_queue.get()
+env = GridWorld(15)
+agent = QAgent(env)
 
-        game_thread = threading.Thread(target=game_loop, daemon=True)
-        game_thread.start()
-        return jsonify({"status": "started"}), 200
-    return jsonify({"status": "already running"}), 200
+@app.route('/state', methods=['GET'])
+def get_state():
+    return jsonify({
+        "size": env.size,
+        "mario": env.mario,
+        "goal": env.goal,
+        "enemies": env.enemies,
+        "walls": env.walls,
+        "level": env.level_num,
+        "episode": agent.episode,
+        "epsilon": round(agent.epsilon, 3),
+        "history": agent.reward_history,
+        "time_alive": round(time.time() - agent.start_time, 1)
+    })
 
-@app.route('/stop', methods=['POST'])
-def stop_game():
-    global game_running
-    game_running = False
-    return jsonify({"status": "stopped"}), 200
+@app.route('/step', methods=['POST'])
+def step():
+    result = agent.learn_step()
+    return jsonify(result)
 
-@app.route('/status')
-def get_status():
-    global game_running, goal_reached_flag
-    return jsonify({"running": game_running, "goal_reached": goal_reached_flag})
-
-@app.route('/logs')
-def get_logs():
-    logs = []
-    while not log_queue.empty():
-        try:
-            logs.append(log_queue.get_nowait())
-        except Empty:
-            break
-    return jsonify(logs)
-
+@app.route('/reset', methods=['POST'])
+def reset():
+    global agent, env
+    env = GridWorld(15)
+    agent = QAgent(env)
+    return jsonify({"status": "reset"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
